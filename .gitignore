@@ -1,0 +1,15 @@
+# Binaries / tunnels (never deploy these)
+cloudflared.exe
+ngrok.exe
+*.log
+
+# Python
+__pycache__/
+*.pyc
+.venv/
+venv/
+
+# Editor / OS
+.DS_Store
+.claude/
+config.yml

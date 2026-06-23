@@ -1,0 +1,670 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Question Generator · AP / GP</title>
+  <script>
+    window.MathJax = {
+      tex: { inlineMath: [["\\(", "\\)"]], displayMath: [["\\[", "\\]"]], processEscapes: true, processEnvironments: true },
+      options: { skipHtmlTags: ["script", "noscript", "style", "textarea", "pre", "code"], ignoreHtmlClass: "no-mathjax" },
+      svg: { fontCache: "global" },
+    };
+  </script>
+  <script src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-svg.js" id="MathJax-script" async></script>
+  <!-- Markdown (GFM tables, inline HTML) -->
+  <script src="https://cdn.jsdelivr.net/npm/marked/marked.min.js"></script>
+  <style>
+    :root{
+      --bg:#0b0e17; --bg2:#0f1320; --panel:#151a2b; --panel2:#1b2236; --line:#262e47;
+      --line2:#313b5a; --txt:#eaedf7; --muted:#98a2c4; --faint:#6b7493;
+      --acc:#6c8cff; --acc2:#43c6ac; --good:#3ecf8e; --bad:#ff6b6b; --warn:#ffcf5c;
+      --r:14px; --r2:10px;
+    }
+    *{box-sizing:border-box}
+    html,body{margin:0;height:100%}
+    body{
+      font-family:"Inter","Segoe UI",system-ui,-apple-system,Roboto,Arial,sans-serif;
+      background:radial-gradient(1100px 520px at 85% -8%, #1a2142 0%, transparent 60%), var(--bg);
+      background-color:var(--bg); color:var(--txt); font-size:14px; line-height:1.45;
+    }
+    .topbar{
+      display:flex; align-items:center; gap:14px; padding:16px 26px;
+      border-bottom:1px solid var(--line); position:sticky; top:0; z-index:20;
+      background:rgba(11,14,23,.86); backdrop-filter:blur(10px);
+    }
+    .logo{width:34px;height:34px;border-radius:9px;background:linear-gradient(135deg,var(--acc),var(--acc2));
+      display:grid;place-items:center;font-weight:800;color:#0b0e17;font-size:16px}
+    .topbar h1{font-size:16px;margin:0;font-weight:650;letter-spacing:.2px}
+    .topbar p{margin:1px 0 0;font-size:12px;color:var(--muted)}
+    .srv{margin-left:auto;display:flex;align-items:center;gap:7px;font-size:12px;font-weight:600;
+      border:1px solid var(--line2);border-radius:999px;padding:5px 12px;color:var(--muted)}
+    .srv .dot{width:8px;height:8px;border-radius:50%;background:var(--faint);flex-shrink:0}
+    .srv.online{color:var(--good);border-color:rgba(62,207,142,.35)}
+    .srv.online .dot{background:var(--good);box-shadow:0 0 6px rgba(62,207,142,.7)}
+    .srv.offline{color:var(--bad);border-color:rgba(255,107,107,.35)}
+    .srv.offline .dot{background:var(--bad)}
+    .testbtn{font-size:11.5px;padding:5px 11px;border-radius:7px;border:1px solid var(--line2);
+      background:var(--panel2);color:var(--muted);cursor:pointer;margin-top:8px;width:100%}
+    .testbtn:hover{border-color:var(--acc);color:var(--txt)}
+    .keystat{font-size:11.5px;margin-top:5px;min-height:14px;}
+    .grid{display:grid;grid-template-columns:400px 1fr;gap:0;min-height:calc(100vh - 67px)}
+    @media(max-width:920px){.grid{grid-template-columns:1fr}}
+    .form{padding:20px 22px;border-right:1px solid var(--line);overflow-y:auto}
+    .results{padding:22px 26px;overflow-y:auto}
+    .sec{margin-bottom:22px}
+    .sec-h{display:flex;align-items:center;gap:8px;margin:0 0 12px;
+      font-size:11px;font-weight:700;letter-spacing:.10em;text-transform:uppercase;color:var(--faint)}
+    .sec-h .n{width:18px;height:18px;border-radius:5px;background:var(--panel2);border:1px solid var(--line2);
+      display:grid;place-items:center;color:var(--muted);font-size:10px}
+    label{display:block;font-size:12px;color:var(--muted);margin:11px 0 5px;font-weight:500}
+    .field{position:relative}
+    select,input[type=text],input[type=number],input[type=password],textarea{
+      width:100%;background:var(--bg2);border:1px solid var(--line);color:var(--txt);
+      border-radius:var(--r2);padding:10px 11px;font-size:13.5px;font-family:inherit;outline:none;transition:.15s}
+    select:hover,input:hover,textarea:hover{border-color:var(--line2)}
+    select:focus,input:focus,textarea:focus{border-color:var(--acc);box-shadow:0 0 0 3px rgba(108,140,255,.16)}
+    select:disabled,option:disabled{color:var(--faint)}
+    textarea{resize:vertical;min-height:78px}
+    .two{display:grid;grid-template-columns:1fr 1fr;gap:11px}
+    .seg{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:5px}
+    .seg button{border:1px solid var(--line);background:var(--bg2);color:var(--txt);border-radius:var(--r2);
+      padding:11px 12px;cursor:pointer;text-align:left;transition:.15s}
+    .seg button:hover:not(:disabled){border-color:var(--line2)}
+    .seg button .t{font-weight:650;font-size:13.5px;display:block}
+    .seg button .d{font-size:11px;color:var(--muted);margin-top:1px}
+    .seg button.on{border-color:var(--acc);background:#1f2a4d;box-shadow:0 0 0 2px rgba(108,140,255,.22) inset}
+    .seg button:disabled{opacity:.4;cursor:not-allowed}
+    .hint{font-size:11.5px;color:var(--faint);margin-top:6px}
+    .chips{display:flex;flex-wrap:wrap;gap:6px;margin-top:9px}
+    .chip{font-size:11.5px;background:var(--panel2);border:1px solid var(--line2);border-radius:999px;
+      padding:4px 11px;color:var(--muted)}
+    .chip b{color:var(--txt);font-weight:650}
+    .source{display:flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);
+      background:var(--panel);border:1px solid var(--line);border-radius:var(--r2);padding:9px 11px;margin-top:6px}
+    .source .dot{width:7px;height:7px;border-radius:50%;background:var(--good)}
+    .source.bad .dot{background:var(--bad)}
+    .filebtn{display:inline-flex;align-items:center;gap:7px;font-size:12px;color:var(--muted);
+      border:1px dashed var(--line2);border-radius:var(--r2);padding:8px 11px;cursor:pointer;width:100%;justify-content:center}
+    .filebtn:hover{border-color:var(--acc);color:var(--txt)}
+    input[type=file]{display:none}
+    .btn{width:100%;margin-top:6px;border:none;border-radius:var(--r2);padding:13px;font-size:14.5px;font-weight:700;
+      cursor:pointer;color:#08101f;background:linear-gradient(90deg,var(--acc),var(--acc2));transition:.15s}
+    .btn:hover:not(:disabled){filter:brightness(1.07)}
+    .btn:disabled{opacity:.5;cursor:not-allowed}
+    .status{font-size:12px;margin-top:9px;min-height:15px}
+    .status.ok{color:var(--acc2)} .status.err{color:var(--bad)} .status.warn{color:var(--warn)}
+    .spin{display:inline-block;width:13px;height:13px;border:2px solid rgba(255,255,255,.25);border-top-color:#fff;
+      border-radius:50%;animation:sp .7s linear infinite;vertical-align:-2px;margin-right:6px}
+    @keyframes sp{to{transform:rotate(360deg)}}
+    /* results */
+    .res-head{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-bottom:14px;flex-wrap:wrap}
+    .res-head .meta{display:flex;flex-wrap:wrap;gap:6px}
+    .tools{display:flex;gap:7px}
+    .tools button{font-size:12px;padding:7px 12px;border-radius:8px;border:1px solid var(--line2);
+      background:var(--panel2);color:var(--txt);cursor:pointer}
+    .tools button:hover{border-color:var(--acc)}
+    .empty{display:grid;place-items:center;min-height:60vh;text-align:center;color:var(--faint);padding:30px}
+    .empty .ic{font-size:34px;margin-bottom:12px;opacity:.6}
+    .qcard{background:var(--panel);border:1px solid var(--line);border-radius:var(--r);padding:15px 17px;margin-bottom:13px}
+    .qcard .qh{display:flex;align-items:center;gap:8px;margin-bottom:9px;flex-wrap:wrap}
+    .qnum{font-weight:750;color:var(--acc);font-size:13px}
+    .badge{font-size:10.5px;font-weight:650;letter-spacing:.03em;border-radius:6px;padding:2px 8px;text-transform:uppercase}
+    .badge.type{background:rgba(108,140,255,.16);color:#aebdff;border:1px solid rgba(108,140,255,.3)}
+    .badge.cog{background:rgba(67,198,172,.14);color:#7fe6cf;border:1px solid rgba(67,198,172,.28)}
+    .badge.diff{background:rgba(255,207,92,.13);color:#ffd97a;border:1px solid rgba(255,207,92,.28)}
+    .qbody{font-size:14.5px;line-height:1.65;margin-bottom:10px}
+    /* Markdown output (marked.js) inside cards */
+    .qbody table,.sol table,.opt table,.qtable,.custom-table{border-collapse:collapse;margin:9px 0;font-size:13.5px;max-width:100%}
+    .qbody th,.qbody td,.sol th,.sol td,.opt th,.opt td,.qtable th,.qtable td,
+    .custom-table th,.custom-table td{border:1px solid var(--line2);padding:6px 11px;text-align:left;vertical-align:top}
+    .qbody th,.sol th,.opt th,.qtable th,.custom-table th{background:var(--panel2);font-weight:650;color:var(--txt)}
+    .qbody p,.sol p,.opt p{margin:7px 0}
+    .qbody p:first-child,.sol p:first-child,.opt p:first-child{margin-top:0}
+    .qbody p:last-child,.sol p:last-child,.opt p:last-child{margin-bottom:0}
+    .qbody b,.qbody strong,.opt b,.opt strong,.sol b,.sol strong{font-weight:700;color:var(--txt)}
+    .qbody ul,.qbody ol,.sol ul,.sol ol{margin:6px 0;padding-left:20px}
+    .qbody code,.sol code{background:var(--bg2);border:1px solid var(--line);border-radius:5px;padding:1px 5px;font-size:12.5px}
+    .opts{display:grid;gap:7px;margin:4px 0 10px}
+    .opt{display:flex;gap:9px;align-items:flex-start;border:1px solid var(--line);border-radius:9px;padding:8px 11px;background:var(--bg2)}
+    .opt .k{font-weight:700;color:var(--muted);min-width:16px}
+    .opt.correct{border-color:rgba(62,207,142,.55);background:rgba(62,207,142,.10)}
+    .opt.correct .k{color:var(--good)}
+    .ans,.sol{font-size:13px;border-top:1px dashed var(--line2);padding-top:9px;margin-top:4px}
+    .ans b,.sol b{color:var(--muted);font-weight:650;text-transform:uppercase;font-size:10.5px;letter-spacing:.05em;display:block;margin-bottom:3px}
+    .ans .v{color:var(--good)}
+    pre.raw{white-space:pre-wrap;background:var(--bg2);border:1px solid var(--line);border-radius:var(--r2);
+      padding:14px;color:var(--muted);font-size:12.5px;display:none}
+    .note{font-size:12px;color:var(--warn);background:rgba(255,207,92,.08);border:1px solid rgba(255,207,92,.25);
+      border-radius:var(--r2);padding:9px 11px;margin-bottom:13px;display:none}
+
+    /* ===== White generation/results area (light document theme) ===== */
+    .results{background:#ffffff;color:#0f172a}
+    .results .qcard{background:#ffffff;border:1px solid #e5e9f2;box-shadow:0 1px 3px rgba(15,23,42,.06)}
+    .results .qbody{color:#0f172a}
+    .results .qnum{color:#2563eb}
+    .results .badge.type{background:#dbeafe;color:#1e40af;border-color:transparent}
+    .results .badge.cog{background:#d1fae5;color:#065f46;border-color:transparent}
+    .results .badge.diff{background:#fef3c7;color:#92400e;border-color:transparent}
+    .results .opt{background:#f8fafc;border-color:#e5e9f2;color:#0f172a}
+    .results .opt .k{color:#475569}
+    .results .opt.correct{background:#dcfce7;border-color:#22c55e}
+    .results .opt.correct .k{color:#15803d}
+    .results .ans,.results .sol{border-top-color:#e5e9f2}
+    .results .ans b,.results .sol b{color:#64748b}
+    .results .ans .v{color:#15803d}
+    .results .sol{background:#f0fdf4;border:1px solid #bbf7d0;border-left:4px solid #22c55e;border-radius:8px;padding:10px 12px;color:#0f172a}
+    .results .chip{background:#eef2ff;border-color:#dbe4ff;color:#475569}
+    .results .chip b{color:#0f172a}
+    .results .tools button{background:#f1f5f9;border-color:#cbd5e1;color:#0f172a}
+    .results .tools button:hover{border-color:#2563eb}
+    .results .empty{color:#94a3b8}
+    .results pre.raw{background:#f8fafc;border-color:#e5e9f2;color:#334155}
+    /* markdown content on white */
+    .results .qbody table,.results .sol table,.results .opt table,.results .qtable,.results .custom-table{}
+    .results .qbody th,.results .qbody td,.results .sol th,.results .sol td,.results .opt th,.results .opt td,
+    .results .qtable th,.results .qtable td,.results .custom-table th,.results .custom-table td{border-color:#cbd5e1;color:#0f172a}
+    .results .qbody th,.results .sol th,.results .opt th,.results .qtable th,.results .custom-table th{background:#f1f5f9;color:#0f172a}
+    .results .qbody b,.results .qbody strong,.results .opt b,.results .opt strong,.results .sol b,.results .sol strong{color:#0f172a}
+    .results .qbody code,.results .sol code{background:#f1f5f9;border-color:#e2e8f0;color:#0f172a}
+  </style>
+</head>
+<body>
+  <div class="topbar">
+    <div class="logo">Q</div>
+    <div>
+      <h1>Question Generator</h1>
+      <p>Curriculum · Grade · Subject · AP / GP — picks the exact prompt, LaTeX rendered as math</p>
+    </div>
+    <div class="srv" id="srvPill"><span class="dot"></span><span id="srvLabel">Checking…</span></div>
+  </div>
+
+  <div class="grid">
+    <!-- ===== FORM ===== -->
+    <div class="form">
+      <div class="sec">
+        <div class="sec-h"><span class="n">1</span> Selection</div>
+
+        <div class="two">
+          <div class="field">
+            <label for="curriculum">Curriculum / Board</label>
+            <select id="curriculum">
+              <option value="CBSE">CBSE</option>
+              <option value="ICSE">ICSE</option>
+              <option value="AP">AP (Andhra Pradesh)</option>
+              <option value="TG">TG (Telangana)</option>
+            </select>
+          </div>
+          <div class="field">
+            <label for="grade">Grade</label>
+            <select id="grade">
+              <option>6</option><option>7</option><option>8</option><option>9</option>
+              <option selected>10</option><option>11</option><option>12</option>
+            </select>
+          </div>
+        </div>
+
+        <label for="subject">Subject</label>
+        <select id="subject"></select>
+
+        <label>Practice type</label>
+        <div class="seg" id="seg">
+          <button type="button" data-code="gp" class="on">
+            <span class="t">GP · Guided Practice</span><span class="d">Objective — SCQ + RA</span>
+          </button>
+          <button type="button" data-code="ap">
+            <span class="t">AP · Assessment Practice</span><span class="d">Subjective — VSA / SA / LA</span>
+          </button>
+        </div>
+
+        <label for="num">Number of questions</label>
+        <input id="num" type="number" min="1" max="100" value="30" />
+        <div class="chips" id="breakdown"></div>
+
+        <div class="source" id="source"><span class="dot"></span><span id="sourceText">—</span></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-h"><span class="n">2</span> Chapter content</div>
+        <label for="chapter">Chapter name</label>
+        <input id="chapter" type="text" placeholder="e.g. Polynomials" />
+        <div class="hint">Questions are generated across the whole chapter.</div>
+        <label for="script">Script / source content</label>
+        <textarea id="script" placeholder="Paste the chapter script / source text the questions must be based on..."></textarea>
+        <label class="filebtn" for="scriptFile">⬆ Upload script (PDF / TXT / MD)</label>
+        <input id="scriptFile" type="file" accept=".pdf,.txt,.md,.markdown" />
+        <div class="status" id="fileStatus"></div>
+      </div>
+
+      <div class="sec">
+        <div class="sec-h"><span class="n">3</span> Model</div>
+        <div class="two">
+          <div class="field">
+            <label for="provider">Provider</label>
+            <select id="provider"><option value="claude">Claude</option><option value="gemma">Gemma (OpenRouter)</option></select>
+          </div>
+          <div class="field">
+            <label for="key">API key</label>
+            <input id="key" type="password" autocomplete="off" placeholder="sk-ant-..." />
+          </div>
+        </div>
+        <select id="claudeModel" style="margin-top:10px;">
+          <option value="claude-sonnet-4-6">claude-sonnet-4-6 (Recommended)</option>
+          <option value="claude-opus-4-8">claude-opus-4-8</option>
+          <option value="claude-haiku-4-5-20251001">claude-haiku-4-5</option>
+        </select>
+        <select id="gemmaModel" style="margin-top:10px;display:none">
+          <option value="google/gemma-4-31b-it">google/gemma-4-31b-it</option>
+        </select>
+        <button class="testbtn" id="testKey" type="button">Test API key &amp; server connection</button>
+        <div class="keystat" id="keystat"></div>
+      </div>
+
+      <button class="btn" id="go">Generate questions</button>
+      <div class="status" id="status"></div>
+    </div>
+
+    <!-- ===== RESULTS ===== -->
+    <div class="results">
+      <div class="res-head">
+        <div class="meta" id="meta"></div>
+        <div class="tools">
+          <button id="copyBtn" type="button">Copy</button>
+          <button id="rawBtn" type="button">Raw</button>
+        </div>
+      </div>
+      <div class="note" id="note"></div>
+      <div id="out">
+        <div class="empty"><div><div class="ic">✦</div>
+          Choose a curriculum, grade, subject and AP/GP, add your lesson script, then generate.
+        </div></div>
+      </div>
+      <pre class="raw" id="raw"></pre>
+    </div>
+  </div>
+
+  <script type="application/json" id="availData">{{ availability|tojson }}</script>
+  <script>
+    const $ = (id) => document.getElementById(id);
+    const els = {
+      curriculum:$("curriculum"), grade:$("grade"), subject:$("subject"), seg:$("seg"),
+      num:$("num"), breakdown:$("breakdown"), source:$("source"), sourceText:$("sourceText"),
+      chapter:$("chapter"),
+      script:$("script"), scriptFile:$("scriptFile"), fileStatus:$("fileStatus"),
+      provider:$("provider"), key:$("key"), claudeModel:$("claudeModel"), gemmaModel:$("gemmaModel"),
+      go:$("go"), status:$("status"), meta:$("meta"), note:$("note"), out:$("out"), raw:$("raw"),
+      copyBtn:$("copyBtn"), rawBtn:$("rawBtn"),
+      srvPill:$("srvPill"), srvLabel:$("srvLabel"), testKey:$("testKey"), keystat:$("keystat"),
+    };
+
+    // ── Server health indicator ──────────────────────────────────────────────
+    async function checkServer(){
+      try{
+        const r=await fetch("/health",{cache:"no-store"});
+        const ok=r.ok;
+        els.srvPill.className="srv "+(ok?"online":"offline");
+        els.srvLabel.textContent=ok?"Server online":"Server error";
+        return ok;
+      }catch(_){
+        els.srvPill.className="srv offline";
+        els.srvLabel.textContent="Server offline";
+        return false;
+      }
+    }
+    checkServer();   // single check on page load only — no polling
+
+    // ── API key test ─────────────────────────────────────────────────────────
+    els.testKey.addEventListener("click", async()=>{
+      const key=els.key.value.trim();
+      if(!key){ els.keystat.style.color="var(--bad)"; els.keystat.textContent="Paste an API key first."; return; }
+      els.keystat.style.color="var(--muted)"; els.keystat.textContent="Testing…";
+      els.testKey.disabled=true;
+      // 1. server reachable?
+      const srvOk=await checkServer();
+      if(!srvOk){
+        els.keystat.style.color="var(--bad)";
+        els.keystat.textContent="Server is offline — restart python app.py and try again.";
+        els.testKey.disabled=false; return;
+      }
+      // 2. API key valid? (tiny 1-token probe)
+      const prov=els.provider.value==="gemma"?"gemma":"claude";
+      const h={"Content-Type":"application/json"};
+      if(prov==="gemma") h["X-Gemma-Key"]=key; else h["X-Claude-Key"]=key;
+      const body={curriculum:"CBSE",grade:"10",subject:"Biology",practiceType:"gp",
+        numQuestions:1,chapter:"Test",script:"Test.",
+        modelProvider:prov,claudeModel:els.claudeModel.value,gemmaModel:els.gemmaModel.value,
+        claude_api_key:prov==="claude"?key:"",gemma_api_key:prov==="gemma"?key:""};
+      try{
+        const r=await fetch("/api/generate-questions",{method:"POST",headers:h,body:JSON.stringify(body)});
+        const ct=r.headers.get("content-type")||"";
+        if(!ct.includes("json")){
+          els.keystat.style.color="var(--bad)";
+          els.keystat.textContent="Server returned non-JSON (HTTP "+r.status+"). Is Flask running?";
+          els.testKey.disabled=false; return;
+        }
+        const d=await r.json();
+        if(!r.ok){
+          els.keystat.style.color="var(--bad)";
+          els.keystat.textContent="Key error: "+(d.error||"Unknown error");
+        } else {
+          els.keystat.style.color="var(--good)";
+          els.keystat.textContent="✓ API key valid — server and model are reachable.";
+        }
+      }catch(e){
+        els.keystat.style.color="var(--bad)";
+        els.keystat.textContent="Connection failed: "+(e.message||"unknown error");
+      }
+      els.testKey.disabled=false;
+    });
+    const SUBJECTS = ["English","Biology","Physics","Chemistry","Geography","Civics","History","Mathematics"];
+    // Availability is injected server-side so it is present immediately (no fetch race).
+    let AVAIL = {};            // {curriculum:{subject:{ap,gp}}}
+    try { AVAIL = JSON.parse(document.getElementById("availData").textContent) || {}; } catch (e) { AVAIL = {}; }
+    let practice = "gp";
+    let lastRaw = "";
+
+    const DIST = {
+      gp:[{code:"SCQ",w:20},{code:"RA",w:10}],
+      ap:[{code:"VSA",w:50},{code:"SA",w:30},{code:"LA",w:20}],
+    };
+    function split(total,ws){
+      total=Math.max(0,parseInt(total,10)||0); const s=ws.reduce((a,b)=>a+b,0)||1;
+      const raw=ws.map(w=>total*w/s), c=raw.map(v=>Math.floor(v));
+      let r=total-c.reduce((a,b)=>a+b,0);
+      const ord=raw.map((v,i)=>i).sort((a,b)=>(raw[b]-Math.floor(raw[b]))-(raw[a]-Math.floor(raw[a])));
+      for(let i=0;i<r;i++)c[ord[i%ord.length]]++; return c;
+    }
+    function dist(code,total){const sp=DIST[code]||[];const c=split(total,sp.map(x=>x.w));return sp.map((x,i)=>({code:x.code,count:c[i]}));}
+
+    function subjectsFor(cur){ return AVAIL[cur] || {}; }
+    function renderSubjects(){
+      const cur=els.curriculum.value, avail=subjectsFor(cur), prev=els.subject.value;
+      els.subject.innerHTML="";
+      let firstEnabled=null;
+      SUBJECTS.forEach(s=>{
+        const has=!!avail[s], o=document.createElement("option");
+        o.value=s; o.textContent=has?s:s+" — no prompt"; o.disabled=!has;
+        if(has&&!firstEnabled)firstEnabled=s;
+        els.subject.appendChild(o);
+      });
+      if(avail[prev]) els.subject.value=prev;
+      else if(firstEnabled) els.subject.value=firstEnabled;
+      refresh();
+    }
+    function refresh(){
+      // breakdown
+      const total=parseInt(els.num.value||"0",10)||0;
+      els.breakdown.innerHTML = dist(practice,total)
+        .map(d=>`<span class="chip">${d.code} <b>${d.count}</b></span>`).join("")
+        || `<span class="chip">—</span>`;
+      // practice availability for selected subject
+      const cur=els.curriculum.value, subj=els.subject.value, a=(subjectsFor(cur)[subj]||{});
+      [...els.seg.querySelectorAll("button")].forEach(b=>{
+        const ok=!!a[b.dataset.code]; b.disabled=!ok;
+        if(b.dataset.code===practice && !ok){ // switch to an available one
+          const alt=[...els.seg.querySelectorAll("button")].find(x=>a[x.dataset.code]);
+          if(alt){ setPractice(alt.dataset.code); return; }
+        }
+      });
+      // source line
+      const has=a[practice];
+      els.source.classList.toggle("bad",!has);
+      els.sourceText.innerHTML = has
+        ? `Using prompt: <b style="color:var(--txt)">${cur} · ${practice.toUpperCase()} · ${subj}</b>`
+        : `No ${practice.toUpperCase()} prompt for ${cur} · ${subj||"—"}. Pick another combination.`;
+      els.go.disabled = !has;
+    }
+    function setPractice(code){
+      practice=code;
+      [...els.seg.querySelectorAll("button")].forEach(b=>b.classList.toggle("on",b.dataset.code===code));
+      refresh();
+    }
+
+    els.seg.addEventListener("click",e=>{const b=e.target.closest("button[data-code]");if(b&&!b.disabled)setPractice(b.dataset.code);});
+    els.curriculum.addEventListener("change",renderSubjects);
+    els.subject.addEventListener("change",refresh);
+    els.num.addEventListener("input",refresh);
+    els.provider.addEventListener("change",()=>{
+      const g=els.provider.value==="gemma";
+      els.gemmaModel.style.display=g?"block":"none";
+      els.claudeModel.style.display=g?"none":"block";
+      els.key.placeholder=g?"OpenRouter API key":"sk-ant-...";
+    });
+
+    // ---- safe fetch helpers -----------------------------------------------
+    function serverErrMsg(status, fallback){
+      if(status===0||status===502||status===503||status===504)
+        return `Gateway error (HTTP ${status||"no response"}) — the Flask server is not responding. `+
+               `Restart python app.py, wait a few seconds, then try again.`;
+      if(status===413) return "File too large (max 64 MB). Try a smaller PDF.";
+      if(status===500) return "Internal server error. Check the terminal where python app.py is running for details.";
+      return fallback||`Request failed (HTTP ${status}).`;
+    }
+    async function safeJSON(r){
+      const ct=r.headers.get("content-type")||"";
+      if(!ct.includes("json")){
+        const body=await r.text().catch(()=>"");
+        throw new Error(serverErrMsg(r.status,
+          `Server returned non-JSON (HTTP ${r.status}). Response: ${body.slice(0,120)}`));
+      }
+      return r.json();
+    }
+
+    // script upload
+    els.scriptFile.addEventListener("change",async()=>{
+      const f=els.scriptFile.files[0]; if(!f)return;
+      els.fileStatus.className="status"; els.fileStatus.textContent="Extracting "+f.name+" ...";
+      const fd=new FormData(); fd.append("file",f);
+      try{
+        let r;
+        try{ r=await fetch("/api/parse-source",{method:"POST",body:fd}); }
+        catch(_){ throw new Error("Could not reach the server — make sure python app.py is running."); }
+        const d=await safeJSON(r);
+        if(!r.ok) throw new Error(d.error||serverErrMsg(r.status));
+        els.script.value=d.text||"";
+        els.fileStatus.className="status ok";
+        els.fileStatus.textContent="Loaded "+(d.text||"").length.toLocaleString()+" characters.";
+      }catch(err){
+        els.fileStatus.className="status err";
+        els.fileStatus.textContent=err.message||"Upload failed.";
+      }
+    });
+
+    function headers(){const h={"Content-Type":"application/json"};const k=els.key.value.trim();
+      if(els.provider.value==="gemma")h["X-Gemma-Key"]=k;else h["X-Claude-Key"]=k;return h;}
+    function payload(){const prov=els.provider.value==="gemma"?"gemma":"claude";const k=els.key.value.trim();
+      return {curriculum:els.curriculum.value,grade:els.grade.value,subject:els.subject.value,practiceType:practice,
+        numQuestions:parseInt(els.num.value||"10",10),chapter:els.chapter.value.trim(),script:els.script.value.trim(),
+        modelProvider:prov,claudeModel:els.claudeModel.value,gemmaModel:els.gemmaModel.value,
+        claude_api_key:prov==="claude"?k:"",gemma_api_key:prov==="gemma"?k:""};}
+
+    const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
+    const letter=i=>String.fromCharCode(65+i);
+
+    // ----- Rendering pipeline: marked.js (GFM + custom tables) + MathJax, with
+    //       LaTeX protected from markdown and bare unicode symbols fixed up. -----
+    if (window.marked) marked.setOptions({ gfm:true, breaks:true, headerIds:false, mangle:false });
+
+    const UNICODE_FIXUPS=[
+      ["₹","\\text{₹}"],["€","\\text{€}"],["£","\\text{£}"],["¥","\\text{¥}"],["₩","\\text{₩}"],
+      ["°","^{\\circ}"],["÷","\\div"],["×","\\times"],["∞","\\infty"],["√","\\surd"],
+      ["≈","\\approx"],["≠","\\neq"],["≤","\\leq"],["≥","\\geq"],
+      ["→","\\rightarrow"],["←","\\leftarrow"],["↔","\\leftrightarrow"],["⇌","\\rightleftharpoons"],
+      ["∴","\\therefore"],["∵","\\because"],["∑","\\sum"],["∏","\\prod"],["∫","\\int"],["Δ","\\Delta"],
+      ["α","\\alpha"],["β","\\beta"],["γ","\\gamma"],["δ","\\delta"],["ε","\\varepsilon"],["θ","\\theta"],
+      ["λ","\\lambda"],["μ","\\mu"],["π","\\pi"],["σ","\\sigma"],["τ","\\tau"],["φ","\\phi"],["ψ","\\psi"],
+      ["ω","\\omega"],["Σ","\\Sigma"],["Ω","\\Omega"],["Φ","\\Phi"],["Ψ","\\Psi"],
+    ];
+    function fixMathContent(inner){
+      const out=[]; let i=0;
+      while(i<inner.length){
+        if(inner.startsWith("\\text{",i)){
+          let depth=1,j=i+6;
+          while(j<inner.length&&depth>0){ if(inner[j]==="{")depth++; else if(inner[j]==="}")depth--; if(depth>0)j++; }
+          out.push(inner.slice(i,j+1)); i=j+1;
+        } else {
+          let next=inner.indexOf("\\text{",i); if(next===-1)next=inner.length;
+          let chunk=inner.slice(i,next);
+          for(const [bad,good] of UNICODE_FIXUPS){ if(chunk.includes(bad)) chunk=chunk.split(bad).join(good); }
+          out.push(chunk); i=next;
+        }
+      }
+      return out.join("");
+    }
+    function protectMath(text){
+      const blocks=[];
+      let out=String(text).replace(/\\\(([\s\S]*?)\\\)/g,(_m,inner)=>{blocks.push("\\("+fixMathContent(inner)+"\\)");return `@@MJX${blocks.length-1}@@`;});
+      out=out.replace(/\\\[([\s\S]*?)\\\]/g,(_m,inner)=>{blocks.push("\\["+fixMathContent(inner)+"\\]");return `@@MJX${blocks.length-1}@@`;});
+      return {text:out,blocks};
+    }
+    function restoreMath(html,blocks){ return html.replace(/@@MJX(\d+)@@/g,(_,i)=>blocks[parseInt(i,10)]||""); }
+    function renderRich(raw){
+      if(raw==null||raw==="")return "";
+      const {text,blocks}=protectMath(String(raw));
+      let html = window.marked ? marked.parse(text) : esc(text).replace(/\n/g,"<br>");
+      return restoreMath(html,blocks);
+    }
+
+    // ---- Valid cognitive/difficulty combinations ---------------------------
+    const VALID_COMBOS = {
+      Factual:       ["Easy"],
+      Understanding: ["Easy","Medium","Hard"],
+      Application:   ["Medium","Hard"],
+    };
+    const COG_ALIAS = {knowledge:"Factual",recall:"Factual",remembering:"Factual",
+                       comprehension:"Understanding",analysis:"Application",
+                       evaluate:"Application",create:"Application",synthesis:"Application"};
+    const DIFF_ALIAS = {low:"Easy",moderate:"Medium",high:"Hard"};
+    function normalizeCombo(cog, diff){
+      const c0 = String(cog||"").trim();
+      const d0 = String(diff||"").trim();
+      let c = COG_ALIAS[c0.toLowerCase()] || (c0?c0[0].toUpperCase()+c0.slice(1):"Understanding");
+      let d = DIFF_ALIAS[d0.toLowerCase()] || (d0?d0[0].toUpperCase()+d0.slice(1):"Medium");
+      const allowed = VALID_COMBOS[c];
+      if(allowed && allowed.includes(d)) return [c,d];
+      if(c==="Factual") return ["Factual","Easy"];
+      if(c==="Understanding") return ["Understanding", allowed&&allowed.includes(d)?d:"Medium"];
+      if(c==="Application") return ["Application", d==="Hard"?"Hard":"Medium"];
+      return ["Understanding","Medium"];
+    }
+
+    // ---- Client-side JSON extraction (fallback if server parsed=null) ------
+    function clientExtractJSON(raw){
+      const text=String(raw||"").trim();
+      const fenced=text.match(/```(?:json)?\s*([\s\S]*?)```/i);
+      const candidate=fenced?fenced[1].trim():text;
+      function tryArr(s){ const a=s.indexOf("["),b=s.lastIndexOf("]");
+        if(a<0||b<=a)return null;
+        try{const p=JSON.parse(s.slice(a,b+1));return Array.isArray(p)?p:null;}catch(_){return null;} }
+      return tryArr(candidate)||(fenced?tryArr(text):null);
+    }
+
+    // Standard Reason-Assertion options, used only if the model omits them for an RA item.
+    const RA_STD_OPTIONS=[
+      "Both A and R are true and R is the correct explanation of A",
+      "Both A and R are true but R is not the correct explanation of A",
+      "A is true but R is false",
+      "A is false but R is true",
+    ];
+    const asArray=v=>Array.isArray(v)?v:(v==null||v===""?[]:[v]);
+    function renderCards(items){
+      return items.map((q,i)=>{
+        const isRA=String(q.questionType||"").toUpperCase().includes("RA");
+        let opts=asArray(q.options).length?asArray(q.options):asArray(q.choices);
+        if(!opts.length && isRA) opts=RA_STD_OPTIONS;
+        const answers=asArray(q.answers!=null?q.answers:(q.answer!=null?q.answer:(q.correctAnswer!=null?q.correctAnswer:q.correct))).map(a=>String(a).trim());
+        const solution=q.solution!=null?q.solution:(q.explanation!=null?q.explanation:(q.Solution!=null?q.Solution:""));
+        const isCorrect=(opt,idx)=>answers.some(a=>{
+          const A=a.toLowerCase(), o=String(opt).toLowerCase().trim();
+          return A===o || A===letter(idx).toLowerCase() || A==="("+letter(idx).toLowerCase()+")" || A===String(idx+1);
+        });
+        const optsHtml=opts.length?`<div class="opts">${opts.map((o,idx)=>
+          `<div class="opt ${isCorrect(o,idx)?"correct":""}"><span class="k">${letter(idx)}</span><span>${renderRich(o)}</span></div>`).join("")}</div>`:"";
+        const ansHtml=answers.length?`<div class="ans"><b>Answer</b><span class="v">${renderRich(answers.join(", "))}</span></div>`:"";
+        const sol=solution?`<div class="sol"><b>Solution</b><span>${renderRich(solution)}</span></div>`:"";
+        // Normalize cognitive/difficulty to valid combos
+        const [cog,diff]=normalizeCombo(q.cognitiveLevel,q.difficultyLevel);
+        const badges=[
+          q.questionType?`<span class="badge type">${esc(q.questionType)}</span>`:"",
+          cog?`<span class="badge cog">${esc(cog)}</span>`:"",
+          diff?`<span class="badge diff">${esc(diff)}</span>`:"",
+        ].join("");
+        return `<div class="qcard"><div class="qh"><span class="qnum">Q${q.sno||i+1}</span>${badges}</div>
+          <div class="qbody">${renderRich(q.question)}</div>${optsHtml}${ansHtml}${sol}</div>`;
+      }).join("");
+    }
+    async function typeset(){ if(window.MathJax&&MathJax.typesetPromise){try{await MathJax.typesetPromise([els.out]);}catch(e){}} }
+
+    const sleep=ms=>new Promise(r=>setTimeout(r,ms));
+    // Poll a background job until it finishes (avoids Cloudflare's 100s/524 limit).
+    async function pollJob(jobId, startTs){
+      while(true){
+        await sleep(2500);
+        let r;
+        try{ r=await fetch("/api/job/"+jobId,{cache:"no-store"}); }
+        catch(_){ continue; }   // transient tunnel hiccup — keep polling
+        let d;
+        try{ d=await safeJSON(r); }
+        catch(_){ continue; }    // 524/HTML from tunnel — keep polling
+        if(d.status==="pending"){
+          const secs=Math.round((Date.now()-startTs)/1000);
+          els.status.innerHTML=`<span class="spin"></span>Generating… (${secs}s)`;
+          continue;
+        }
+        if(d.status==="error" || !r.ok) throw new Error(d.error||"Generation failed.");
+        return d;   // status === "done"
+      }
+    }
+
+    els.go.addEventListener("click",async()=>{
+      const p=payload();
+      if(!els.key.value.trim()){els.status.className="status err";els.status.textContent="Paste your API key first.";return;}
+      els.go.disabled=true; els.status.className="status";
+      els.status.innerHTML=`<span class="spin"></span>Generating ${p.numQuestions} ${practice.toUpperCase()} questions for ${p.curriculum} · ${p.subject}...`;
+      try{
+        let r;
+        try{ r=await fetch("/api/generate-questions",{method:"POST",headers:headers(),body:JSON.stringify(p)}); }
+        catch(_){ throw new Error("Could not reach the server — make sure python app.py is running."); }
+        const start=await safeJSON(r);
+        if(!r.ok) throw new Error(start.error||serverErrMsg(r.status,"Generation failed."));
+        if(!start.job_id) throw new Error(start.error||"Server did not start the job.");
+        // Poll the background job until done (each poll is a short request).
+        const d=await pollJob(start.job_id, Date.now());
+        lastRaw=d.questions||""; els.raw.textContent=lastRaw;
+        els.meta.innerHTML=[
+          `<span class="chip"><b>${d.curriculum}</b></span>`,`<span class="chip">Grade <b>${d.grade}</b></span>`,
+          `<span class="chip"><b>${d.subject}</b></span>`,`<span class="chip">${String(d.practiceType||practice).toUpperCase()} · <b>${d.practiceLabel||""}</b></span>`,
+          `<span class="chip">Total <b>${d.numQuestions}</b></span>`,
+          ...(d.distribution||[]).map(x=>`<span class="chip">${x.code} <b>${x.count}</b></span>`),
+        ].join("");
+        // Use server-parsed array; if null, try client-side extraction as fallback.
+        const items = (Array.isArray(d.parsed)&&d.parsed.length) ? d.parsed : clientExtractJSON(lastRaw);
+        if(items&&items.length){
+          els.note.style.display="none";
+          els.out.innerHTML=renderCards(items);
+        }else{
+          els.note.style.display="block";
+          els.note.textContent="Could not parse the model output as structured JSON — showing raw text. (Try again or check the prompt output format.)";
+          els.out.innerHTML=`<div class="qcard qbody">${esc(lastRaw).replace(/\n/g,"<br>")}</div>`;
+        }
+        await typeset();
+        els.status.className="status ok"; els.status.textContent="Done.";
+      }catch(err){els.status.className="status err";els.status.textContent=err.message;}
+      finally{els.go.disabled=false; refresh();}
+    });
+
+    els.copyBtn.addEventListener("click",async()=>{try{await navigator.clipboard.writeText(lastRaw);
+      els.copyBtn.textContent="Copied!";setTimeout(()=>els.copyBtn.textContent="Copy",1200);}catch(e){}});
+    els.rawBtn.addEventListener("click",()=>{const show=els.raw.style.display==="none"||!els.raw.style.display;
+      els.raw.style.display=show?"block":"none"; els.out.style.display=show?"none":"block";});
+
+    // Render immediately from the injected availability, then refresh in the
+    // background from the API (in case the server data changed).
+    renderSubjects();
+    (async()=>{
+      try{const r=await fetch("/api/options",{cache:"no-store"});const d=await r.json();
+        if(d&&d.availability&&Object.keys(d.availability).length){AVAIL=d.availability;renderSubjects();}}catch(e){}
+    })();
+  </script>
+</body>
+</html>

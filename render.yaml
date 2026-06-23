@@ -1,0 +1,13 @@
+services:
+  - type: web
+    name: question-generator
+    runtime: python
+    plan: free
+    buildCommand: pip install -r requirements.txt
+    # waitress is single-process + multi-threaded, so the in-memory job queue
+    # (JOBS dict + background generation threads) is shared across all requests.
+    startCommand: python app.py
+    healthCheckPath: /health
+    envVars:
+      - key: PYTHON_VERSION
+        value: "3.12.4"
