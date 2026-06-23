@@ -168,14 +168,16 @@ PRACTICE_DISTRIBUTIONS = {
 }
 
 
+MAX_UPLOAD_MB = 30
+
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = 64 * 1024 * 1024  # 64 MB uploads
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
 
 
 # --- Global JSON error handlers (prevent Flask from returning HTML error pages) --
 @app.errorhandler(413)
 def too_large(_e):
-    return jsonify({"error": "File too large. Maximum upload size is 64 MB."}), 413
+    return jsonify({"error": f"File too large. Maximum upload size is {MAX_UPLOAD_MB} MB."}), 413
 
 
 @app.errorhandler(400)

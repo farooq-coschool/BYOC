@@ -383,7 +383,7 @@
       if(status===0||status===502||status===503||status===504)
         return `Gateway error (HTTP ${status||"no response"}) — the Flask server is not responding. `+
                `Restart python app.py, wait a few seconds, then try again.`;
-      if(status===413) return "File too large (max 64 MB). Try a smaller PDF.";
+      if(status===413) return "File too large (max 30 MB). Try a smaller PDF.";
       if(status===500) return "Internal server error. Check the terminal where python app.py is running for details.";
       return fallback||`Request failed (HTTP ${status}).`;
     }
