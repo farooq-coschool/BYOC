@@ -652,15 +652,20 @@ def _extract_pdf_text_with_pymupdf(data):
         doc.close()
 
 
-def parse_source_file(file_storage, payload=None):
-    payload = payload or {}
+def _read_source_upload(file_storage):
     filename = str(getattr(file_storage, "filename", "") or "").strip()
-    suffix = Path(filename).suffix.lower()
     data = file_storage.read()
     if not data:
         raise ValueError("Uploaded file is empty.")
     if len(data) > MAX_UPLOAD_BYTES:
         raise ValueError(f"File too large. Maximum upload size is {MAX_UPLOAD_MB} MB.")
+    return filename, data
+
+
+def parse_source_data(data, filename, payload=None):
+    payload = payload or {}
+    filename = str(filename or "").strip()
+    suffix = Path(filename).suffix.lower()
 
     if suffix == ".pdf":
         try:
@@ -711,6 +716,75 @@ def parse_source_file(file_storage, payload=None):
         except UnicodeDecodeError:
             continue
     raise ValueError("Could not decode the text file.")
+
+
+def parse_source_file(file_storage, payload=None):
+    filename, data = _read_source_upload(file_storage)
+    return parse_source_data(data, filename, payload)
+
+
+SOURCE_UPLOADS = {}
+SOURCE_UPLOADS_LOCK = threading.Lock()
+
+
+def _prune_source_uploads(max_age=3600):
+    now = time.time()
+    with SOURCE_UPLOADS_LOCK:
+        stale = [fid for fid, item in SOURCE_UPLOADS.items() if now - item.get("ts", now) > max_age]
+        for fid in stale:
+            SOURCE_UPLOADS.pop(fid, None)
+
+
+def store_source_upload(file_storage):
+    filename, data = _read_source_upload(file_storage)
+    suffix = Path(filename).suffix.lower()
+    if suffix not in {".pdf", ".txt", ".text", ".md", ".markdown", ""}:
+        raise ValueError("Upload the script/source as .pdf, .txt, or .md.")
+
+    _prune_source_uploads()
+    file_id = uuid.uuid4().hex
+    with SOURCE_UPLOADS_LOCK:
+        SOURCE_UPLOADS[file_id] = {
+            "filename": filename or "source",
+            "suffix": suffix,
+            "size": len(data),
+            "data": data,
+            "ts": time.time(),
+        }
+    return {
+        "fileId": file_id,
+        "filename": filename or "source",
+        "suffix": suffix,
+        "size": len(data),
+    }
+
+
+def get_source_upload(file_id):
+    file_id = str(file_id or "").strip()
+    if not file_id:
+        return None
+    with SOURCE_UPLOADS_LOCK:
+        source = SOURCE_UPLOADS.get(file_id)
+        if source:
+            source["ts"] = time.time()
+        return source
+
+
+def apply_uploaded_source(payload):
+    source_file_id = str((payload or {}).get("sourceFileId") or "").strip()
+    if not source_file_id:
+        return payload
+
+    source = get_source_upload(source_file_id)
+    if not source:
+        raise ValueError("Uploaded source file expired or was not found. Upload the PDF again.")
+
+    text = parse_source_data(source["data"], source["filename"], payload)
+    payload = dict(payload)
+    existing_script = str(payload.get("script") or "").strip()
+    payload["script"] = f"{existing_script}\n\n{text}".strip() if existing_script else text
+    payload["sourceFileId"] = ""
+    return payload
 
 
 # --- Distribution ------------------------------------------------------------
@@ -834,6 +908,8 @@ def build_prompt(payload):
     )
     if script:
         text = text.replace("[File Attached]", script)
+        if script not in text:
+            text += f"\n\n[SOURCE CONTENT / UPLOADED SCRIPT]\n{script}\n[/SOURCE CONTENT]\n"
     scope = (
         f"[SCOPE — OVERRIDE]: Generate questions covering {whole_chapter}. "
         "Spread the questions across the whole chapter; do NOT restrict them to a single subtopic.\n\n"
@@ -906,6 +982,7 @@ def build_prompt(payload):
 
 
 def generate_questions_result(payload):
+    payload = apply_uploaded_source(payload)
     practice_code = str(payload.get("practiceType") or "").strip().lower()
     prompt, distribution, num_questions = build_prompt(payload)
     raw = call_model(prompt, payload, max_output_tokens=int(payload.get("maxTokens") or 16000))
@@ -989,12 +1066,8 @@ def parse_source_route():
     if "file" not in request.files:
         return jsonify({"error": "Upload a file first."}), 400
     try:
-        payload = {
-            "modelProvider": request.form.get("modelProvider", "claude"),
-            "claudeModel": request.form.get("claudeModel", DEFAULT_CLAUDE_MODEL),
-            "gemmaModel": request.form.get("gemmaModel", DEFAULT_GEMMA_MODEL),
-        }
-        return jsonify({"text": parse_source_file(request.files["file"], payload)})
+        stored = store_source_upload(request.files["file"])
+        return jsonify({"uploaded": True, **stored})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 

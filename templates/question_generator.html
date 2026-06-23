@@ -310,6 +310,7 @@
     try { AVAIL = JSON.parse(document.getElementById("availData").textContent) || {}; } catch (e) { AVAIL = {}; }
     let practice = "gp";
     let lastRaw = "";
+    let uploadedSource = null;
     const MAX_UPLOAD_MB = 30;
     const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 
@@ -406,9 +407,10 @@
         els.fileStatus.className="status err";
         els.fileStatus.textContent=`File too large (max ${MAX_UPLOAD_MB} MB). Try a smaller PDF.`;
         els.scriptFile.value="";
+        uploadedSource = null;
         return;
       }
-      els.fileStatus.className="status"; els.fileStatus.textContent="Extracting "+f.name+" ...";
+      els.fileStatus.className="status"; els.fileStatus.textContent="Uploading "+f.name+" ...";
       const prov=els.provider.value==="gemma"?"gemma":"claude";
       const fd=new FormData();
       fd.append("file",f);
@@ -421,10 +423,12 @@
         catch(_){ throw new Error("Could not reach the server — make sure python app.py is running."); }
         const d=await safeJSON(r);
         if(!r.ok) throw new Error(d.error||serverErrMsg(r.status));
-        els.script.value=d.text||"";
+        uploadedSource=d;
         els.fileStatus.className="status ok";
-        els.fileStatus.textContent="Loaded "+(d.text||"").length.toLocaleString()+" characters.";
+        const mb=(f.size/1024/1024).toFixed(1);
+        els.fileStatus.textContent=`Uploaded ${d.filename||f.name} (${mb} MB). It will be read when you generate.`;
       }catch(err){
+        uploadedSource=null;
         els.fileStatus.className="status err";
         els.fileStatus.textContent=err.message||"Upload failed.";
       }
@@ -434,6 +438,8 @@
     function payload(){const prov=els.provider.value==="gemma"?"gemma":"claude";
       return {curriculum:els.curriculum.value,grade:els.grade.value,subject:els.subject.value,practiceType:practice,
         numQuestions:parseInt(els.num.value||"10",10),chapter:els.chapter.value.trim(),script:els.script.value.trim(),
+        sourceFileId:uploadedSource&&uploadedSource.fileId?uploadedSource.fileId:"",
+        sourceFilename:uploadedSource&&uploadedSource.filename?uploadedSource.filename:"",
         modelProvider:prov,claudeModel:els.claudeModel.value,gemmaModel:els.gemmaModel.value};}
 
     const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
@@ -577,7 +583,8 @@
     els.go.addEventListener("click",async()=>{
       const p=payload();
       els.go.disabled=true; els.status.className="status";
-      els.status.innerHTML=`<span class="spin"></span>Generating ${p.numQuestions} ${practice.toUpperCase()} questions for ${p.curriculum} · ${p.subject}...`;
+      const sourceNote=p.sourceFileId?"Reading uploaded source and generating":"Generating";
+      els.status.innerHTML=`<span class="spin"></span>${sourceNote} ${p.numQuestions} ${practice.toUpperCase()} questions for ${p.curriculum} · ${p.subject}...`;
       try{
         let r;
         try{ r=await fetch("/api/generate-questions",{method:"POST",headers:headers(),body:JSON.stringify(p)}); }
