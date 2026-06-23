@@ -350,6 +350,144 @@ def call_model(prompt, payload, max_output_tokens=16000):
 
 
 # --- Source / script file parsing -------------------------------------------
+ANTHROPIC_FILES_BETA = "files-api-2025-04-14"
+
+
+def _claude_key_or_none():
+    for name in ("CLAUDE_API_KEY", "ANTHROPIC_API_KEY"):
+        value = str(os.environ.get(name, "")).strip()
+        if value:
+            return value
+    return None
+
+
+def _anthropic_headers(api_key, content_type=None, beta=None):
+    headers = {
+        "x-api-key": api_key,
+        "anthropic-version": "2023-06-01",
+    }
+    if content_type:
+        headers["content-type"] = content_type
+    if beta:
+        headers["anthropic-beta"] = beta
+    return headers
+
+
+def _safe_upload_filename(filename):
+    name = Path(str(filename or "document.pdf")).name or "document.pdf"
+    name = re.sub(r'[<>:"|?*\\/]', "_", name)
+    name = "".join("_" if ord(ch) < 32 else ch for ch in name).strip(" .")
+    if not name:
+        name = "document.pdf"
+    if not name.lower().endswith(".pdf"):
+        name += ".pdf"
+    return name[:255]
+
+
+def _anthropic_upload_pdf(data, filename, api_key):
+    boundary = f"----QuestionGenerator{uuid.uuid4().hex}"
+    safe_name = _safe_upload_filename(filename)
+    body = b"".join(
+        [
+            f"--{boundary}\r\n".encode("utf-8"),
+            f'Content-Disposition: form-data; name="file"; filename="{safe_name}"\r\n'.encode("utf-8"),
+            b"Content-Type: application/pdf\r\n\r\n",
+            data,
+            f"\r\n--{boundary}--\r\n".encode("utf-8"),
+        ]
+    )
+    req = urllib.request.Request(
+        "https://api.anthropic.com/v1/files",
+        data=body,
+        headers=_anthropic_headers(
+            api_key,
+            content_type=f"multipart/form-data; boundary={boundary}",
+            beta=ANTHROPIC_FILES_BETA,
+        ),
+        method="POST",
+    )
+    try:
+        uploaded = _open_json(req, timeout=540, attempts=2)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise ValueError(f"Claude PDF upload failed: {detail}") from exc
+    file_id = str(uploaded.get("id") or "").strip()
+    if not file_id:
+        raise ValueError("Claude PDF upload failed: no file id returned.")
+    return file_id
+
+
+def _anthropic_delete_file(file_id, api_key):
+    if not file_id:
+        return
+    req = urllib.request.Request(
+        f"https://api.anthropic.com/v1/files/{file_id}",
+        headers=_anthropic_headers(api_key, beta=ANTHROPIC_FILES_BETA),
+        method="DELETE",
+    )
+    try:
+        _open_json(req, timeout=60, attempts=1)
+    except Exception:
+        pass
+
+
+def _extract_text_from_pdf_with_claude(data, filename):
+    api_key = _claude_key_or_none()
+    if not api_key:
+        return ""
+
+    file_id = None
+    try:
+        file_id = _anthropic_upload_pdf(data, filename, api_key)
+        prompt = (
+            "Read this PDF visually and extract the lesson/source text for a question generator. "
+            "The PDF may be scanned or image-only, so use OCR-like reading when needed. "
+            "Return only the extracted text, preserving headings, paragraph order, lists, formulas, "
+            "tables, and important labels. Do not summarize and do not add commentary."
+        )
+        body = json.dumps(
+            {
+                "model": DEFAULT_CLAUDE_MODEL,
+                "max_tokens": 16000,
+                "messages": [
+                    {
+                        "role": "user",
+                        "content": [
+                            {
+                                "type": "document",
+                                "source": {"type": "file", "file_id": file_id},
+                            },
+                            {"type": "text", "text": prompt},
+                        ],
+                    }
+                ],
+            }
+        ).encode("utf-8")
+        req = urllib.request.Request(
+            "https://api.anthropic.com/v1/messages",
+            data=body,
+            headers=_anthropic_headers(
+                api_key,
+                content_type="application/json",
+                beta=ANTHROPIC_FILES_BETA,
+            ),
+            method="POST",
+        )
+        try:
+            response = _open_json(req, timeout=540, attempts=2)
+        except urllib.error.HTTPError as exc:
+            detail = exc.read().decode("utf-8", errors="replace")
+            raise ValueError(f"Claude PDF reading failed: {detail}") from exc
+        text_parts = [
+            block.get("text", "")
+            for block in response.get("content", [])
+            if block.get("type") == "text"
+        ]
+        return "\n".join(text_parts).strip()
+    finally:
+        _anthropic_delete_file(file_id, api_key)
+
+
 def _extract_pdf_text_with_pypdf(data):
     try:
         from pypdf import PdfReader
@@ -428,8 +566,21 @@ def parse_source_file(file_storage):
                 ) from exc
 
         if not text:
+            try:
+                text = _extract_text_from_pdf_with_claude(data, filename)
+            except ValueError:
+                raise
+            except Exception as exc:
+                raise ValueError(f"Claude PDF reading failed: {exc}") from exc
+
+        if not text and not _claude_key_or_none():
             raise ValueError(
-                "No selectable text was found in this PDF. If it is scanned or image-only, convert it with OCR first, then upload it again."
+                "No selectable text was found in this PDF. Set CLAUDE_API_KEY on the server to read scanned PDFs with Claude, or upload an OCR/text-based PDF."
+            )
+
+        if not text:
+            raise ValueError(
+                "No readable text was found in this PDF, even after Claude PDF reading. Try a clearer scan or an OCR/text-based PDF."
             )
         return text
 
