@@ -9,6 +9,7 @@ AP = Assessment Practice (subjective: VSA / SA / LA).
 GP = Guided Practice (objective: SCQ + RA).
 """
 
+import base64
 import http.client
 import json
 import os
@@ -353,6 +354,14 @@ def call_model(prompt, payload, max_output_tokens=16000):
 ANTHROPIC_FILES_BETA = "files-api-2025-04-14"
 
 
+def _gemma_key_or_none():
+    for name in ("GEMMA_API_KEY", "OPENROUTER_API_KEY"):
+        value = str(os.environ.get(name, "")).strip()
+        if value:
+            return value
+    return None
+
+
 def _claude_key_or_none():
     for name in ("CLAUDE_API_KEY", "ANTHROPIC_API_KEY"):
         value = str(os.environ.get(name, "")).strip()
@@ -488,6 +497,111 @@ def _extract_text_from_pdf_with_claude(data, filename):
         _anthropic_delete_file(file_id, api_key)
 
 
+def _openrouter_message_text(message):
+    content = (message or {}).get("content", "")
+    if isinstance(content, str):
+        return content.strip()
+    if isinstance(content, list):
+        parts = []
+        for item in content:
+            if isinstance(item, dict) and item.get("type") == "text":
+                parts.append(str(item.get("text") or ""))
+            elif isinstance(item, str):
+                parts.append(item)
+        return "\n".join(part.strip() for part in parts if part.strip()).strip()
+    return str(content or "").strip()
+
+
+def _extract_text_from_pdf_with_openrouter(data, filename, model=None):
+    api_key = _gemma_key_or_none()
+    if not api_key:
+        return ""
+
+    selected_model = str(model or DEFAULT_GEMMA_MODEL).strip() or DEFAULT_GEMMA_MODEL
+    if "/" not in selected_model or selected_model.startswith("models/"):
+        raise ValueError(
+            "Gemma PDF reading requires the OpenRouter Gemma model. "
+            "Select Gemma (OpenRouter) and set GEMMA_API_KEY or OPENROUTER_API_KEY."
+        )
+
+    safe_name = _safe_upload_filename(filename)
+    pdf_data = base64.b64encode(data).decode("ascii")
+    pdf_engine = str(os.environ.get("OPENROUTER_PDF_ENGINE") or "mistral-ocr").strip() or "mistral-ocr"
+    prompt = (
+        "Read this PDF visually and extract the lesson/source text for a question generator. "
+        "The PDF may be scanned or image-only, so use OCR-like reading when needed. "
+        "Return only the extracted text, preserving headings, paragraph order, lists, formulas, "
+        "tables, and important labels. Do not summarize and do not add commentary."
+    )
+    body = json.dumps(
+        {
+            "model": selected_model,
+            "messages": [
+                {
+                    "role": "user",
+                    "content": [
+                        {"type": "text", "text": prompt},
+                        {
+                            "type": "file",
+                            "file": {
+                                "filename": safe_name,
+                                "file_data": f"data:application/pdf;base64,{pdf_data}",
+                            },
+                        },
+                    ],
+                }
+            ],
+            "plugins": [
+                {
+                    "id": "file-parser",
+                    "pdf": {"engine": pdf_engine},
+                }
+            ],
+        }
+    ).encode("utf-8")
+    req = urllib.request.Request(
+        "https://openrouter.ai/api/v1/chat/completions",
+        data=body,
+        headers={
+            "content-type": "application/json",
+            "Authorization": f"Bearer {api_key}",
+            "X-Title": "Question Generator",
+        },
+        method="POST",
+    )
+    try:
+        response = _open_json(req, timeout=540, attempts=2)
+    except urllib.error.HTTPError as exc:
+        detail = exc.read().decode("utf-8", errors="replace")
+        raise ValueError(f"Gemma PDF reading failed: {detail}") from exc
+
+    text_parts = []
+    for choice in response.get("choices", []):
+        text = _openrouter_message_text(choice.get("message") or {})
+        if text:
+            text_parts.append(text)
+    return "\n".join(text_parts).strip()
+
+
+def _extract_text_from_pdf_with_selected_model(data, filename, payload):
+    provider = model_provider_from_payload(payload)
+    if provider == "gemma":
+        return _extract_text_from_pdf_with_openrouter(data, filename, model_name_from_payload(payload))
+    return _extract_text_from_pdf_with_claude(data, filename)
+
+
+def _missing_pdf_reader_key_message(payload):
+    if model_provider_from_payload(payload) == "gemma":
+        return (
+            "No selectable text was found in this PDF. Set GEMMA_API_KEY or OPENROUTER_API_KEY "
+            "on the server to read scanned PDFs with Gemma/OpenRouter, or upload an OCR/text-based PDF."
+        )
+    return (
+        "No selectable text was found in this PDF. Set CLAUDE_API_KEY on the server to read scanned PDFs "
+        "with Claude, or upload an OCR/text-based PDF."
+    )
+
+
 def _extract_pdf_text_with_pypdf(data):
     try:
         from pypdf import PdfReader
@@ -538,7 +652,8 @@ def _extract_pdf_text_with_pymupdf(data):
         doc.close()
 
 
-def parse_source_file(file_storage):
+def parse_source_file(file_storage, payload=None):
+    payload = payload or {}
     filename = str(getattr(file_storage, "filename", "") or "").strip()
     suffix = Path(filename).suffix.lower()
     data = file_storage.read()
@@ -567,20 +682,23 @@ def parse_source_file(file_storage):
 
         if not text:
             try:
-                text = _extract_text_from_pdf_with_claude(data, filename)
+                text = _extract_text_from_pdf_with_selected_model(data, filename, payload)
             except ValueError:
                 raise
             except Exception as exc:
-                raise ValueError(f"Claude PDF reading failed: {exc}") from exc
+                provider_label = "Gemma/OpenRouter" if model_provider_from_payload(payload) == "gemma" else "Claude"
+                raise ValueError(f"{provider_label} PDF reading failed: {exc}") from exc
 
-        if not text and not _claude_key_or_none():
-            raise ValueError(
-                "No selectable text was found in this PDF. Set CLAUDE_API_KEY on the server to read scanned PDFs with Claude, or upload an OCR/text-based PDF."
-            )
+        if not text and (
+            (_gemma_key_or_none() if model_provider_from_payload(payload) == "gemma" else _claude_key_or_none())
+            is None
+        ):
+            raise ValueError(_missing_pdf_reader_key_message(payload))
 
         if not text:
+            provider_label = "Gemma/OpenRouter" if model_provider_from_payload(payload) == "gemma" else "Claude"
             raise ValueError(
-                "No readable text was found in this PDF, even after Claude PDF reading. Try a clearer scan or an OCR/text-based PDF."
+                f"No readable text was found in this PDF, even after {provider_label} PDF reading. Try a clearer scan or an OCR/text-based PDF."
             )
         return text
 
@@ -871,7 +989,12 @@ def parse_source_route():
     if "file" not in request.files:
         return jsonify({"error": "Upload a file first."}), 400
     try:
-        return jsonify({"text": parse_source_file(request.files["file"])})
+        payload = {
+            "modelProvider": request.form.get("modelProvider", "claude"),
+            "claudeModel": request.form.get("claudeModel", DEFAULT_CLAUDE_MODEL),
+            "gemmaModel": request.form.get("gemmaModel", DEFAULT_GEMMA_MODEL),
+        }
+        return jsonify({"text": parse_source_file(request.files["file"], payload)})
     except Exception as exc:
         return jsonify({"error": str(exc)}), 400
 

@@ -409,7 +409,12 @@
         return;
       }
       els.fileStatus.className="status"; els.fileStatus.textContent="Extracting "+f.name+" ...";
-      const fd=new FormData(); fd.append("file",f);
+      const prov=els.provider.value==="gemma"?"gemma":"claude";
+      const fd=new FormData();
+      fd.append("file",f);
+      fd.append("modelProvider",prov);
+      fd.append("claudeModel",els.claudeModel.value);
+      fd.append("gemmaModel",els.gemmaModel.value);
       try{
         let r;
         try{ r=await fetch("/api/parse-source",{method:"POST",body:fd}); }
