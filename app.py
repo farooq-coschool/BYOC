@@ -26,6 +26,29 @@ from flask import Flask, jsonify, render_template, request
 
 import prompt_library as pl
 
+# Load .env (API keys live here, never in the browser). Optional dependency:
+# if python-dotenv isn't installed we fall back to a tiny manual parser.
+def _load_dotenv():
+    try:
+        from dotenv import load_dotenv
+        load_dotenv()
+        return
+    except Exception:
+        pass
+    env_path = Path(__file__).parent / ".env"
+    if not env_path.exists():
+        return
+    for line in env_path.read_text(encoding="utf-8").splitlines():
+        line = line.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, _, value = line.partition("=")
+        key, value = key.strip(), value.strip().strip('"').strip("'")
+        os.environ.setdefault(key, value)
+
+
+_load_dotenv()
+
 
 _RETRYABLE = (
     urllib.error.URLError,
@@ -63,7 +86,6 @@ BASE_DIR = Path(__file__).parent.resolve()
 DEFAULT_CLAUDE_MODEL = "claude-sonnet-4-6"
 CLAUDE_MODELS = [
     "claude-sonnet-4-6",
-    "claude-opus-4-8",
     "claude-haiku-4-5-20251001",
 ]
 DEFAULT_GEMMA_MODEL = "google/gemma-4-31b-it"
@@ -299,14 +321,19 @@ def model_name_from_payload(payload):
 
 
 def api_key_from_request(payload, provider):
-    header_name = "X-Gemma-Key" if provider == "gemma" else "X-Claude-Key"
-    payload_name = "gemma_api_key" if provider == "gemma" else "claude_api_key"
-    api_key = request.headers.get(header_name, "").strip()
-    if not api_key:
-        api_key = str((payload or {}).get(payload_name, "")).strip()
-    if not api_key:
-        raise ValueError(f"Missing {provider.capitalize()} API key. Paste your key first.")
-    return api_key
+    """API keys come from server-side environment (.env) — never the browser."""
+    if provider == "gemma":
+        env_keys = ("GEMMA_API_KEY", "OPENROUTER_API_KEY")
+    else:
+        env_keys = ("CLAUDE_API_KEY", "ANTHROPIC_API_KEY")
+    for name in env_keys:
+        value = str(os.environ.get(name, "")).strip()
+        if value:
+            return value
+    raise ValueError(
+        f"Missing {provider.capitalize()} API key on the server. "
+        f"Set {env_keys[0]} in the .env file (or Render environment) and restart."
+    )
 
 
 def call_model(prompt, payload, max_output_tokens=16000):

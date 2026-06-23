@@ -1,3 +1,6 @@
+# Secrets — NEVER commit
+.env
+
 # Binaries / tunnels (never deploy these)
 cloudflared.exe
 ngrok.exe

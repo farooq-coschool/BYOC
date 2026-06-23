@@ -34,16 +34,31 @@ The prompts live in `prompts_db/` (copied from the MongoDB Compass exports):
 - To add/replace prompts, drop a new export into `prompts_db/` with the same name
   and restart.
 
-## Run
+## Run locally
 ```bash
 pip install -r requirements.txt
+cp .env.example .env        # then paste your real key into .env
 python app.py
 ```
-Open http://localhost:5001 and paste a **Claude** (Anthropic) or **Gemma**
-(OpenRouter) API key in the Model section. The key is sent per request, never stored.
+Open http://localhost:5001 and pick a **Provider** + **Model**. The API key is read
+from the server-side `.env` file (`CLAUDE_API_KEY` / `GEMMA_API_KEY`) — it is never
+typed in the browser or sent from the client.
+
+## Deploy on Render (runs across computers, permanent URL)
+1. Push this folder to a GitHub repo.
+2. On [render.com](https://render.com) → **New → Blueprint**, point it at the repo
+   (`render.yaml` is already included).
+3. In the service's **Environment** tab, add `CLAUDE_API_KEY` (and optionally
+   `GEMMA_API_KEY`). Deploy.
+
+Generation runs as a background job (`POST /api/generate-questions` returns a
+`job_id`, the UI polls `GET /api/job/<id>`), so long model calls don't hit any
+request-timeout limit.
 
 ## Endpoints
 - `GET /` — the UI
 - `GET /api/options` — curricula/grades/subjects/practice types + availability map
 - `POST /api/parse-source` — extract text from an uploaded PDF/TXT/MD script
-- `POST /api/generate-questions` — select prompt, override counts, fill, call model
+- `POST /api/generate-questions` — start a generation job, returns `{job_id}`
+- `GET /api/job/<job_id>` — poll job status (pending / done / error)
+- `GET /health` — health check

@@ -238,26 +238,17 @@
 
       <div class="sec">
         <div class="sec-h"><span class="n">3</span> Model</div>
-        <div class="two">
-          <div class="field">
-            <label for="provider">Provider</label>
-            <select id="provider"><option value="claude">Claude</option><option value="gemma">Gemma (OpenRouter)</option></select>
-          </div>
-          <div class="field">
-            <label for="key">API key</label>
-            <input id="key" type="password" autocomplete="off" placeholder="sk-ant-..." />
-          </div>
-        </div>
-        <select id="claudeModel" style="margin-top:10px;">
+        <label for="provider">Provider</label>
+        <select id="provider"><option value="claude">Claude</option><option value="gemma">Gemma (OpenRouter)</option></select>
+        <label for="claudeModel" style="margin-top:10px;">Model</label>
+        <select id="claudeModel">
           <option value="claude-sonnet-4-6">claude-sonnet-4-6 (Recommended)</option>
-          <option value="claude-opus-4-8">claude-opus-4-8</option>
           <option value="claude-haiku-4-5-20251001">claude-haiku-4-5</option>
         </select>
         <select id="gemmaModel" style="margin-top:10px;display:none">
           <option value="google/gemma-4-31b-it">google/gemma-4-31b-it</option>
         </select>
-        <button class="testbtn" id="testKey" type="button">Test API key &amp; server connection</button>
-        <div class="keystat" id="keystat"></div>
+        <div class="hint">The API key is configured securely on the server.</div>
       </div>
 
       <button class="btn" id="go">Generate questions</button>
@@ -291,10 +282,10 @@
       num:$("num"), breakdown:$("breakdown"), source:$("source"), sourceText:$("sourceText"),
       chapter:$("chapter"),
       script:$("script"), scriptFile:$("scriptFile"), fileStatus:$("fileStatus"),
-      provider:$("provider"), key:$("key"), claudeModel:$("claudeModel"), gemmaModel:$("gemmaModel"),
+      provider:$("provider"), claudeModel:$("claudeModel"), gemmaModel:$("gemmaModel"),
       go:$("go"), status:$("status"), meta:$("meta"), note:$("note"), out:$("out"), raw:$("raw"),
       copyBtn:$("copyBtn"), rawBtn:$("rawBtn"),
-      srvPill:$("srvPill"), srvLabel:$("srvLabel"), testKey:$("testKey"), keystat:$("keystat"),
+      srvPill:$("srvPill"), srvLabel:$("srvLabel"),
     };
 
     // ── Server health indicator ──────────────────────────────────────────────
@@ -313,49 +304,6 @@
     }
     checkServer();   // single check on page load only — no polling
 
-    // ── API key test ─────────────────────────────────────────────────────────
-    els.testKey.addEventListener("click", async()=>{
-      const key=els.key.value.trim();
-      if(!key){ els.keystat.style.color="var(--bad)"; els.keystat.textContent="Paste an API key first."; return; }
-      els.keystat.style.color="var(--muted)"; els.keystat.textContent="Testing…";
-      els.testKey.disabled=true;
-      // 1. server reachable?
-      const srvOk=await checkServer();
-      if(!srvOk){
-        els.keystat.style.color="var(--bad)";
-        els.keystat.textContent="Server is offline — restart python app.py and try again.";
-        els.testKey.disabled=false; return;
-      }
-      // 2. API key valid? (tiny 1-token probe)
-      const prov=els.provider.value==="gemma"?"gemma":"claude";
-      const h={"Content-Type":"application/json"};
-      if(prov==="gemma") h["X-Gemma-Key"]=key; else h["X-Claude-Key"]=key;
-      const body={curriculum:"CBSE",grade:"10",subject:"Biology",practiceType:"gp",
-        numQuestions:1,chapter:"Test",script:"Test.",
-        modelProvider:prov,claudeModel:els.claudeModel.value,gemmaModel:els.gemmaModel.value,
-        claude_api_key:prov==="claude"?key:"",gemma_api_key:prov==="gemma"?key:""};
-      try{
-        const r=await fetch("/api/generate-questions",{method:"POST",headers:h,body:JSON.stringify(body)});
-        const ct=r.headers.get("content-type")||"";
-        if(!ct.includes("json")){
-          els.keystat.style.color="var(--bad)";
-          els.keystat.textContent="Server returned non-JSON (HTTP "+r.status+"). Is Flask running?";
-          els.testKey.disabled=false; return;
-        }
-        const d=await r.json();
-        if(!r.ok){
-          els.keystat.style.color="var(--bad)";
-          els.keystat.textContent="Key error: "+(d.error||"Unknown error");
-        } else {
-          els.keystat.style.color="var(--good)";
-          els.keystat.textContent="✓ API key valid — server and model are reachable.";
-        }
-      }catch(e){
-        els.keystat.style.color="var(--bad)";
-        els.keystat.textContent="Connection failed: "+(e.message||"unknown error");
-      }
-      els.testKey.disabled=false;
-    });
     const SUBJECTS = ["English","Biology","Physics","Chemistry","Geography","Civics","History","Mathematics"];
     // Availability is injected server-side so it is present immediately (no fetch race).
     let AVAIL = {};            // {curriculum:{subject:{ap,gp}}}
@@ -428,7 +376,6 @@
       const g=els.provider.value==="gemma";
       els.gemmaModel.style.display=g?"block":"none";
       els.claudeModel.style.display=g?"none":"block";
-      els.key.placeholder=g?"OpenRouter API key":"sk-ant-...";
     });
 
     // ---- safe fetch helpers -----------------------------------------------
@@ -470,13 +417,11 @@
       }
     });
 
-    function headers(){const h={"Content-Type":"application/json"};const k=els.key.value.trim();
-      if(els.provider.value==="gemma")h["X-Gemma-Key"]=k;else h["X-Claude-Key"]=k;return h;}
-    function payload(){const prov=els.provider.value==="gemma"?"gemma":"claude";const k=els.key.value.trim();
+    function headers(){return {"Content-Type":"application/json"};}   // API key lives on the server
+    function payload(){const prov=els.provider.value==="gemma"?"gemma":"claude";
       return {curriculum:els.curriculum.value,grade:els.grade.value,subject:els.subject.value,practiceType:practice,
         numQuestions:parseInt(els.num.value||"10",10),chapter:els.chapter.value.trim(),script:els.script.value.trim(),
-        modelProvider:prov,claudeModel:els.claudeModel.value,gemmaModel:els.gemmaModel.value,
-        claude_api_key:prov==="claude"?k:"",gemma_api_key:prov==="gemma"?k:""};}
+        modelProvider:prov,claudeModel:els.claudeModel.value,gemmaModel:els.gemmaModel.value};}
 
     const esc=s=>String(s==null?"":s).replace(/&/g,"&amp;").replace(/</g,"&lt;").replace(/>/g,"&gt;");
     const letter=i=>String.fromCharCode(65+i);
@@ -618,7 +563,6 @@
 
     els.go.addEventListener("click",async()=>{
       const p=payload();
-      if(!els.key.value.trim()){els.status.className="status err";els.status.textContent="Paste your API key first.";return;}
       els.go.disabled=true; els.status.className="status";
       els.status.innerHTML=`<span class="spin"></span>Generating ${p.numQuestions} ${practice.toUpperCase()} questions for ${p.curriculum} · ${p.subject}...`;
       try{
