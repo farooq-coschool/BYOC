@@ -350,6 +350,56 @@ def call_model(prompt, payload, max_output_tokens=16000):
 
 
 # --- Source / script file parsing -------------------------------------------
+def _extract_pdf_text_with_pypdf(data):
+    try:
+        from pypdf import PdfReader
+    except Exception as exc:
+        raise ValueError("PDF support is not installed. Run: pip install pypdf") from exc
+
+    reader = PdfReader(BytesIO(data), strict=False)
+    if reader.is_encrypted:
+        decrypt_result = reader.decrypt("")
+        if decrypt_result == 0:
+            raise ValueError("This PDF is password-protected. Upload an unlocked PDF.")
+
+    pages = []
+    for page in reader.pages:
+        try:
+            pages.append(page.extract_text() or "")
+        except Exception:
+            pages.append("")
+    return "\n\n".join(part.strip() for part in pages if part.strip()).strip()
+
+
+def _extract_pdf_text_with_pymupdf(data):
+    try:
+        import fitz
+    except Exception:
+        return ""
+
+    doc = fitz.open(stream=data, filetype="pdf")
+    try:
+        if doc.is_encrypted and not doc.authenticate(""):
+            raise ValueError("This PDF is password-protected. Upload an unlocked PDF.")
+
+        pages = []
+        for page in doc:
+            text = (page.get_text("text") or "").strip()
+            if not text:
+                blocks = page.get_text("blocks") or []
+                text_blocks = [
+                    block for block in blocks
+                    if len(block) >= 5 and isinstance(block[4], str) and block[4].strip()
+                ]
+                text_blocks.sort(key=lambda block: (block[1], block[0]))
+                text = "\n".join(block[4].strip() for block in text_blocks)
+            if text.strip():
+                pages.append(text.strip())
+        return "\n\n".join(pages).strip()
+    finally:
+        doc.close()
+
+
 def parse_source_file(file_storage):
     filename = str(getattr(file_storage, "filename", "") or "").strip()
     suffix = Path(filename).suffix.lower()
@@ -361,32 +411,25 @@ def parse_source_file(file_storage):
 
     if suffix == ".pdf":
         try:
-            from pypdf import PdfReader
-        except Exception as exc:
-            raise ValueError("PDF support is not installed. Run: pip install pypdf") from exc
-        try:
-            reader = PdfReader(BytesIO(data), strict=False)
-            if reader.is_encrypted:
-                decrypt_result = reader.decrypt("")
-                if decrypt_result == 0:
-                    raise ValueError("This PDF is password-protected. Upload an unlocked PDF.")
+            text = _extract_pdf_text_with_pypdf(data)
         except ValueError:
             raise
-        except Exception as exc:
-            raise ValueError(
-                "Could not read this PDF. Upload a valid, unlocked PDF with selectable text."
-            ) from exc
+        except Exception:
+            text = ""
 
-        pages = []
-        for index, page in enumerate(reader.pages, start=1):
+        if not text:
             try:
-                pages.append(page.extract_text() or "")
+                text = _extract_pdf_text_with_pymupdf(data)
+            except ValueError:
+                raise
             except Exception as exc:
-                raise ValueError(f"Could not extract text from page {index} of the PDF.") from exc
-        text = "\n\n".join(part.strip() for part in pages if part.strip()).strip()
+                raise ValueError(
+                    "Could not read this PDF. Upload a valid, unlocked PDF with selectable text."
+                ) from exc
+
         if not text:
             raise ValueError(
-                "No readable text was found in the PDF. If it is scanned, use OCR first or upload a text-based PDF."
+                "No selectable text was found in this PDF. If it is scanned or image-only, convert it with OCR first, then upload it again."
             )
         return text
 
