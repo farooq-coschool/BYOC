@@ -310,6 +310,8 @@
     try { AVAIL = JSON.parse(document.getElementById("availData").textContent) || {}; } catch (e) { AVAIL = {}; }
     let practice = "gp";
     let lastRaw = "";
+    const MAX_UPLOAD_MB = 30;
+    const MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024;
 
     const DIST = {
       gp:[{code:"SCQ",w:20},{code:"RA",w:10}],
@@ -400,6 +402,12 @@
     // script upload
     els.scriptFile.addEventListener("change",async()=>{
       const f=els.scriptFile.files[0]; if(!f)return;
+      if(f.size > MAX_UPLOAD_BYTES){
+        els.fileStatus.className="status err";
+        els.fileStatus.textContent=`File too large (max ${MAX_UPLOAD_MB} MB). Try a smaller PDF.`;
+        els.scriptFile.value="";
+        return;
+      }
       els.fileStatus.className="status"; els.fileStatus.textContent="Extracting "+f.name+" ...";
       const fd=new FormData(); fd.append("file",f);
       try{

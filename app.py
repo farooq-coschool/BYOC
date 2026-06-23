@@ -169,9 +169,11 @@ PRACTICE_DISTRIBUTIONS = {
 
 
 MAX_UPLOAD_MB = 30
+MAX_UPLOAD_BYTES = MAX_UPLOAD_MB * 1024 * 1024
+MAX_UPLOAD_REQUEST_BYTES = MAX_UPLOAD_BYTES + (1024 * 1024)
 
 app = Flask(__name__)
-app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_MB * 1024 * 1024
+app.config["MAX_CONTENT_LENGTH"] = MAX_UPLOAD_REQUEST_BYTES
 
 
 # --- Global JSON error handlers (prevent Flask from returning HTML error pages) --
@@ -354,17 +356,38 @@ def parse_source_file(file_storage):
     data = file_storage.read()
     if not data:
         raise ValueError("Uploaded file is empty.")
+    if len(data) > MAX_UPLOAD_BYTES:
+        raise ValueError(f"File too large. Maximum upload size is {MAX_UPLOAD_MB} MB.")
 
     if suffix == ".pdf":
         try:
             from pypdf import PdfReader
         except Exception as exc:
             raise ValueError("PDF support is not installed. Run: pip install pypdf") from exc
-        reader = PdfReader(BytesIO(data))
-        pages = [page.extract_text() or "" for page in reader.pages]
+        try:
+            reader = PdfReader(BytesIO(data), strict=False)
+            if reader.is_encrypted:
+                decrypt_result = reader.decrypt("")
+                if decrypt_result == 0:
+                    raise ValueError("This PDF is password-protected. Upload an unlocked PDF.")
+        except ValueError:
+            raise
+        except Exception as exc:
+            raise ValueError(
+                "Could not read this PDF. Upload a valid, unlocked PDF with selectable text."
+            ) from exc
+
+        pages = []
+        for index, page in enumerate(reader.pages, start=1):
+            try:
+                pages.append(page.extract_text() or "")
+            except Exception as exc:
+                raise ValueError(f"Could not extract text from page {index} of the PDF.") from exc
         text = "\n\n".join(part.strip() for part in pages if part.strip()).strip()
         if not text:
-            raise ValueError("No readable text was found in the PDF.")
+            raise ValueError(
+                "No readable text was found in the PDF. If it is scanned, use OCR first or upload a text-based PDF."
+            )
         return text
 
     if suffix not in {".txt", ".text", ".md", ".markdown", ""}:
