@@ -125,6 +125,7 @@ _COG_ALIAS = {
     "evaluate": "Application", "create": "Application", "synthesis": "Application",
 }
 _DIFF_ALIAS = {"low": "Easy", "moderate": "Medium", "high": "Hard"}
+_ANSWER_POSITION_CYCLE = [1, 0, 3, 2]  # B, A, D, C
 
 
 def _normalize_combo(cognitive, difficulty):
@@ -150,6 +151,91 @@ def _normalize_questions(questions):
         q["cognitiveLevel"], q["difficultyLevel"] = _normalize_combo(
             q.get("cognitiveLevel"), q.get("difficultyLevel")
         )
+        out.append(q)
+    return out
+
+
+def _as_list(value):
+    if isinstance(value, list):
+        return value
+    if value is None or value == "":
+        return []
+    return [value]
+
+
+def _plain_answer_text(value):
+    text = re.sub(r"<[^>]+>", "", str(value or ""))
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _answer_index_from_value(value, options):
+    text = _plain_answer_text(value)
+    if not text:
+        return None
+    if isinstance(value, int) and 1 <= value <= len(options):
+        return value - 1
+
+    letter_match = re.match(r"^(?:option\s*)?[\(\[]?([A-Za-z])[\)\].:]?$", text)
+    if letter_match:
+        index = ord(letter_match.group(1).upper()) - ord("A")
+        if 0 <= index < len(options):
+            return index
+
+    numbered_match = re.match(r"^([1-9]\d*)$", text)
+    if numbered_match:
+        index = int(numbered_match.group(1)) - 1
+        if 0 <= index < len(options):
+            return index
+
+    normalized_answer = _plain_answer_text(text).lower()
+    for index, option in enumerate(options):
+        normalized_option = _plain_answer_text(option).lower()
+        if normalized_answer == normalized_option:
+            return index
+    return None
+
+
+def _correct_option_index(question, options):
+    answer_values = []
+    for key in ("answers", "answer", "correctAnswer", "correct"):
+        answer_values.extend(_as_list(question.get(key)))
+    for value in answer_values:
+        index = _answer_index_from_value(value, options)
+        if index is not None:
+            return index
+    return None
+
+
+def _cycle_objective_answer_positions(questions):
+    out = []
+    option_question_index = 0
+    for item in questions or []:
+        q = dict(item)
+        options = _as_list(q.get("options") or q.get("choices"))
+        if len(options) < 4:
+            out.append(q)
+            continue
+
+        options = list(options)
+        target_index = _ANSWER_POSITION_CYCLE[option_question_index % len(_ANSWER_POSITION_CYCLE)]
+        option_question_index += 1
+        correct_index = _correct_option_index(q, options)
+        if correct_index is None or correct_index >= len(options):
+            out.append(q)
+            continue
+
+        correct_option = options[correct_index]
+        if correct_index != target_index:
+            options[target_index], options[correct_index] = options[correct_index], options[target_index]
+
+        if "choices" in q and "options" not in q:
+            q["choices"] = options
+        else:
+            q["options"] = options
+        q["answers"] = [correct_option]
+        for key in ("answer", "correctAnswer", "correct"):
+            if key in q:
+                q[key] = correct_option
         out.append(q)
     return out
 
@@ -946,6 +1032,11 @@ def build_prompt(payload):
             "An RA object without options, answers and solution is INVALID.\n"
             + cog_rule
             + combo_rule +
+            "Correct answer position rule for ALL objective objects with four options: "
+            "arrange the correct option letters in this repeating cycle by output order: "
+            "Q1=B, Q2=A, Q3=D, Q4=C, Q5=B, Q6=A, Q7=D, Q8=C, and so on. "
+            "Move/shuffle distractors as needed so the correct answer lands at that letter; "
+            "do not make most answers A.\n"
             "Every RA question object MUST follow this exact shape:\n"
             "{\n"
             '  "cognitiveLevel": "Understanding",\n'
@@ -990,6 +1081,9 @@ def generate_questions_result(payload):
     parsed = try_parse_questions(raw)
     if parsed:
         parsed = _normalize_questions(parsed)
+        if practice_code == "gp":
+            parsed = _cycle_objective_answer_positions(parsed)
+            raw = json.dumps(parsed, ensure_ascii=False, indent=2)
     return {
         "questions": raw,
         "parsed": parsed,
