@@ -1032,9 +1032,10 @@ def build_prompt(payload):
             "An RA object without options, answers and solution is INVALID.\n"
             + cog_rule
             + combo_rule +
-            "Correct answer position rule for ALL objective objects with four options: "
+            "Correct answer position rule for ALL SCQ and RA objective objects with four options: "
             "arrange the correct option letters in this repeating cycle by output order: "
             "Q1=B, Q2=A, Q3=D, Q4=C, Q5=B, Q6=A, Q7=D, Q8=C, and so on. "
+            "Apply this across SCQ and RA together in one continuous sequence. "
             "Move/shuffle distractors as needed so the correct answer lands at that letter; "
             "do not make most answers A.\n"
             "Every RA question object MUST follow this exact shape:\n"
